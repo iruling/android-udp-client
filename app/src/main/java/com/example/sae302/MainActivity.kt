@@ -1,6 +1,7 @@
 package com.example.sae302
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -129,7 +130,7 @@ fun UdpClientScreen(
 
 @Preview(showBackground = true)
 @Composable
-fun GreetingPreview() {
+fun UdpClientScreenPreview() {
     Sae302Theme {
         UdpClientScreen(
             messages = listOf("Envoyé: aaaa", "Reçu: BBB,AAA,CC"),
@@ -141,26 +142,35 @@ fun GreetingPreview() {
 private class UdpClient(
     private val onMessageReceived: (String) -> Unit
 ) {
-    private val serverAddress = InetAddress.getByName("127.0.0.1")
-    private val socket = DatagramSocket().apply { soTimeout = 1000 }
+    private val serverAddress = InetAddress.getLoopbackAddress()
+    @Volatile private var socket: DatagramSocket? = null
     private val sendExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val receiveExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     @Volatile private var running = false
 
     fun start() {
         if (running) return
-        running = true
         receiveExecutor.execute {
-            val buffer = ByteArray(1024)
-            while (running) {
+            try {
+                socket = DatagramSocket().apply { soTimeout = 1000 }
+                running = true
+            } catch (exception: Exception) {
+                Log.e(TAG, "Impossible d'initialiser le socket UDP", exception)
+                onMessageReceived("Erreur réception UDP")
+                return@execute
+            }
+
+            while (running && socket != null) {
                 try {
+                    val buffer = ByteArray(1024)
                     val packet = DatagramPacket(buffer, buffer.size)
-                    socket.receive(packet)
+                    socket?.receive(packet)
                     val message = String(packet.data, 0, packet.length)
                     onMessageReceived(message)
                 } catch (_: SocketTimeoutException) {
                     // Continue to check running flag.
-                } catch (_: Exception) {
+                } catch (exception: Exception) {
+                    Log.e(TAG, "Erreur lors de la réception UDP", exception)
                     if (running) {
                         onMessageReceived("Erreur réception UDP")
                     }
@@ -172,10 +182,13 @@ private class UdpClient(
     fun sendMessage(message: String) {
         sendExecutor.execute {
             try {
+                val localSocket = socket ?: return@execute
+                if (!running) return@execute
                 val bytes = message.toByteArray()
                 val packet = DatagramPacket(bytes, bytes.size, serverAddress, UDP_PORT)
-                socket.send(packet)
-            } catch (_: Exception) {
+                localSocket.send(packet)
+            } catch (exception: Exception) {
+                Log.e(TAG, "Erreur lors de l'envoi UDP", exception)
                 onMessageReceived("Erreur envoi UDP")
             }
         }
@@ -183,12 +196,14 @@ private class UdpClient(
 
     fun stop() {
         running = false
-        socket.close()
         sendExecutor.shutdownNow()
         receiveExecutor.shutdownNow()
+        socket?.close()
+        socket = null
     }
 
     private companion object {
+        const val TAG = "UdpClient"
         const val UDP_PORT = 6010
     }
 }
