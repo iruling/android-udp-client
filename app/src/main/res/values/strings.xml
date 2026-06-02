@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">Sae302</string>
+    <string name="message_label">Message UDP</string>
+    <string name="send_button">Envoyer</string>
+    <string name="log_title">Messages envoyés/reçus</string>
+    <string name="log_sent">Envoyé: %1$s</string>
+    <string name="log_received">Reçu: %1$s</string>
 </resources>
